@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import useSWR from "swr"
 import { createClient } from "@/lib/supabase/client"
 import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribution } from "@/lib/types"
@@ -48,27 +48,39 @@ async function fetchAllUserStickers() {
 export function AlbumManager() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [selectedSections, setSelectedSections] = useState<string[]>([])
+  // Controla se as seções já foram inicializadas (evita re-popular após Limpar)
+  const sectionsInitialized = useRef(false)
   const [isUpdating, setIsUpdating] = useState(false)
 
   const { data: users = [] } = useSWR("users", fetchUsers)
   const { data: stickers = [], isLoading: stickersLoading } = useSWR("stickers", fetchStickers)
 
-  const { data: albumStickers = [], mutate: mutateAlbum } = useSWR("album-stickers", fetchAlbumStickers, { refreshInterval: 5000 })
+  const { data: albumStickers = [], mutate: mutateAlbum } = useSWR(
+    "album-stickers",
+    fetchAlbumStickers,
+    { refreshInterval: 5000 }
+  )
 
   const { data: userStickers = [], mutate: mutateUserStickers } = useSWR(
     selectedUser ? `user-stickers-${selectedUser.id}` : null,
     () => selectedUser ? fetchUserStickers(selectedUser.id) : []
   )
 
-  const { data: allUserStickers = [], mutate: mutateAll } = useSWR("all-user-stickers", fetchAllUserStickers, { refreshInterval: 5000 })
+  const { data: allUserStickers = [], mutate: mutateAll } = useSWR(
+    "all-user-stickers",
+    fetchAllUserStickers,
+    { refreshInterval: 5000 }
+  )
 
   const sections = [...new Set(stickers.map((s) => s.section))]
 
+  // Inicializa seções UMA SÓ VEZ quando stickers carregam
   useEffect(() => {
-    if (stickers.length > 0 && selectedSections.length === 0) {
+    if (stickers.length > 0 && !sectionsInitialized.current) {
+      sectionsInitialized.current = true
       setSelectedSections([...new Set(stickers.map((s) => s.section))])
     }
-  }, [stickers, selectedSections.length])
+  }, [stickers])
 
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
     const albumEntry = albumStickers.find((a) => a.sticker_id === sticker.id)
@@ -82,10 +94,12 @@ export function AlbumManager() {
     }
   })
 
+  // Placar: soma contributed_count de TODOS os registros de cada usuário
   const contributions: UserContribution[] = users.map((user) => {
-    const total = allUserStickers
-      .filter((us: any) => us.user_id === user.id)
-      .reduce((acc: number, us: any) => acc + (us.contributed_count ?? 0), 0)
+    const total = (allUserStickers as any[]).reduce((acc, us) => {
+      if (us.user_id === user.id) return acc + (Number(us.contributed_count) || 0)
+      return acc
+    }, 0)
     return { user, contributedCount: total }
   })
 
@@ -104,28 +118,27 @@ export function AlbumManager() {
     }),
   } : null
 
-  // Marcar/desmarcar no ÁLBUM COMPARTILHADO via upsert
+  // Marcar/desmarcar no ÁLBUM COMPARTILHADO
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
     if (isUpdating) return
     setIsUpdating(true)
     try {
-      const newValue = !sticker.obtained
       const { error } = await supabase
         .from("album_stickers")
         .upsert(
-          { sticker_id: sticker.id, obtained: newValue, updated_at: new Date().toISOString() },
+          { sticker_id: sticker.id, obtained: !sticker.obtained, updated_at: new Date().toISOString() },
           { onConflict: "sticker_id" }
         )
       if (error) throw error
       await mutateAlbum()
-    } catch (error) {
-      console.error("Erro ao atualizar álbum:", error)
+    } catch (err) {
+      console.error("Erro ao atualizar álbum:", err)
     } finally {
       setIsUpdating(false)
     }
   }, [isUpdating, mutateAlbum])
 
-  // Incrementar contribuição do usuário selecionado via upsert
+  // Incrementar contribuição do usuário selecionado
   const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
     setIsUpdating(true)
@@ -140,8 +153,8 @@ export function AlbumManager() {
       if (error) throw error
       await mutateUserStickers()
       await mutateAll()
-    } catch (error) {
-      console.error("Erro ao incrementar:", error)
+    } catch (err) {
+      console.error("Erro ao incrementar:", err)
     } finally {
       setIsUpdating(false)
     }
@@ -162,8 +175,8 @@ export function AlbumManager() {
       if (error) throw error
       await mutateUserStickers()
       await mutateAll()
-    } catch (error) {
-      console.error("Erro ao decrementar:", error)
+    } catch (err) {
+      console.error("Erro ao decrementar:", err)
     } finally {
       setIsUpdating(false)
     }
@@ -174,6 +187,10 @@ export function AlbumManager() {
       prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]
     )
   }
+
+  // Limpar = array vazio (sem re-popular pelo useEffect graças ao ref)
+  const handleClearAll = () => setSelectedSections([])
+  const handleSelectAll = () => setSelectedSections([...sections])
 
   if (stickersLoading) {
     return (
@@ -206,28 +223,30 @@ export function AlbumManager() {
               sections={sections}
               selectedSections={selectedSections}
               onToggleSection={handleToggleSection}
-              onSelectAll={() => setSelectedSections(sections)}
-              onClearAll={() => setSelectedSections([])}
+              onSelectAll={handleSelectAll}
+              onClearAll={handleClearAll}
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {selectedSections.map((section) => (
-              <StickerGrid
-                key={section}
-                section={section}
-                stickers={stickersWithStatus}
-                onToggleObtained={handleToggleObtained}
-                onIncrementContributed={handleIncrementContributed}
-                onDecrementContributed={handleDecrementContributed}
-                isLoading={isUpdating}
-              />
-            ))}
-          </div>
-
-          {selectedSections.length === 0 && (
+          {selectedSections.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {selectedSections.map((section) => (
+                <StickerGrid
+                  key={section}
+                  section={section}
+                  stickers={stickersWithStatus}
+                  onToggleObtained={handleToggleObtained}
+                  onIncrementContributed={handleIncrementContributed}
+                  onDecrementContributed={handleDecrementContributed}
+                  isLoading={isUpdating}
+                />
+              ))}
+            </div>
+          ) : (
             <div className="text-center py-12 text-muted-foreground">
-              Selecione pelo menos uma seleção para ver as figurinhas 🌍
+              <p className="text-2xl mb-2">🔍</p>
+              <p className="font-medium">Nenhuma seleção escolhida</p>
+              <p className="text-sm mt-1">Clique em uma seleção acima para ver as figurinhas</p>
             </div>
           )}
         </>
