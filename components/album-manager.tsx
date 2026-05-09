@@ -40,15 +40,32 @@ async function fetchUserStickers(userId: string) {
 }
 
 async function fetchAllUserStickers() {
-  const { data, error } = await supabase.from("user_stickers").select("*")
+  const { data, error } = await supabase.from("user_stickers").select("user_id, contributed_count")
   if (error) throw error
   return data || []
+}
+
+// Atualiza contributed_count usando insert ou update dependendo se já existe registro
+async function setContributedCount(userId: string, stickerId: number, currentId: string | undefined, newCount: number) {
+  if (currentId) {
+    // Registro já existe — atualiza pelo id (PK, sem ambigu idade)
+    const { error } = await supabase
+      .from("user_stickers")
+      .update({ contributed_count: newCount, updated_at: new Date().toISOString() })
+      .eq("id", currentId)
+    if (error) throw error
+  } else {
+    // Registro novo — insere
+    const { error } = await supabase
+      .from("user_stickers")
+      .insert({ user_id: userId, sticker_id: stickerId, contributed_count: newCount })
+    if (error) throw error
+  }
 }
 
 export function AlbumManager() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [selectedSections, setSelectedSections] = useState<string[]>([])
-  // Controla se as seções já foram inicializadas (evita re-popular após Limpar)
   const sectionsInitialized = useRef(false)
   const [isUpdating, setIsUpdating] = useState(false)
 
@@ -69,12 +86,12 @@ export function AlbumManager() {
   const { data: allUserStickers = [], mutate: mutateAll } = useSWR(
     "all-user-stickers",
     fetchAllUserStickers,
-    { refreshInterval: 5000 }
+    { refreshInterval: 3000 }
   )
 
   const sections = [...new Set(stickers.map((s) => s.section))]
 
-  // Inicializa seções UMA SÓ VEZ quando stickers carregam
+  // Inicializa seções UMA SÓ VEZ
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
@@ -84,20 +101,22 @@ export function AlbumManager() {
 
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
     const albumEntry = albumStickers.find((a) => a.sticker_id === sticker.id)
-    const userEntry = userStickers.find((us) => us.sticker_id === sticker.id)
+    const userEntry = (userStickers as any[]).find((us) => us.sticker_id === sticker.id)
     return {
       ...sticker,
       obtained: albumEntry?.obtained ?? false,
       album_sticker_id: albumEntry?.id,
-      contributed_count: userEntry?.contributed_count ?? 0,
+      contributed_count: Number(userEntry?.contributed_count) || 0,
       user_sticker_id: userEntry?.id,
     }
   })
 
-  // Placar: soma contributed_count de TODOS os registros de cada usuário
+  // Placar: soma contributed_count de todos registros de cada usuário
   const contributions: UserContribution[] = users.map((user) => {
-    const total = (allUserStickers as any[]).reduce((acc, us) => {
-      if (us.user_id === user.id) return acc + (Number(us.contributed_count) || 0)
+    const total = (allUserStickers as any[]).reduce((acc: number, us: any) => {
+      if (String(us.user_id) === String(user.id)) {
+        return acc + (Number(us.contributed_count) || 0)
+      }
       return acc
     }, 0)
     return { user, contributedCount: total }
@@ -118,7 +137,7 @@ export function AlbumManager() {
     }),
   } : null
 
-  // Marcar/desmarcar no ÁLBUM COMPARTILHADO
+  // Marcar/desmarcar no ÁLBUM COMPARTILHADO via upsert (só 1 campo de conflito)
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
     if (isUpdating) return
     setIsUpdating(true)
@@ -138,19 +157,17 @@ export function AlbumManager() {
     }
   }, [isUpdating, mutateAlbum])
 
-  // Incrementar contribuição do usuário selecionado
+  // Incrementar: usa insert/update explícito para evitar bug do onConflict composto
   const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
     setIsUpdating(true)
     try {
-      const newCount = sticker.contributed_count + 1
-      const { error } = await supabase
-        .from("user_stickers")
-        .upsert(
-          { user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: newCount, updated_at: new Date().toISOString() },
-          { onConflict: "user_id,sticker_id" }
-        )
-      if (error) throw error
+      await setContributedCount(
+        selectedUser.id,
+        sticker.id,
+        sticker.user_sticker_id,
+        sticker.contributed_count + 1
+      )
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
@@ -160,19 +177,17 @@ export function AlbumManager() {
     }
   }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
-  // Decrementar contribuição do usuário selecionado
+  // Decrementar
   const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
     setIsUpdating(true)
     try {
-      const newCount = sticker.contributed_count - 1
-      const { error } = await supabase
-        .from("user_stickers")
-        .upsert(
-          { user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: newCount, updated_at: new Date().toISOString() },
-          { onConflict: "user_id,sticker_id" }
-        )
-      if (error) throw error
+      await setContributedCount(
+        selectedUser.id,
+        sticker.id,
+        sticker.user_sticker_id,
+        sticker.contributed_count - 1
+      )
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
@@ -188,7 +203,6 @@ export function AlbumManager() {
     )
   }
 
-  // Limpar = array vazio (sem re-popular pelo useEffect graças ao ref)
   const handleClearAll = () => setSelectedSections([])
   const handleSelectAll = () => setSelectedSections([...sections])
 
@@ -205,7 +219,6 @@ export function AlbumManager() {
 
   return (
     <div className="space-y-6">
-      {/* Seleção de jogador */}
       <div className="text-center space-y-4">
         <h2 className="text-xl md:text-2xl font-bold text-foreground">Quem está usando? 🎴</h2>
         <UserSelector users={users} selectedUser={selectedUser} onSelectUser={setSelectedUser} />
@@ -252,7 +265,6 @@ export function AlbumManager() {
         </>
       )}
 
-      {/* PLACAR — sempre visível */}
       {users.length > 0 && (
         <ContributionsBoard
           contributions={contributions}
