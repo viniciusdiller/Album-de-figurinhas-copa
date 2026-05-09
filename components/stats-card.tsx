@@ -1,0 +1,53 @@
+"use client"
+
+import { UserStats } from "@/lib/types"
+
+interface StatsCardProps {
+  stats: UserStats | null
+}
+
+export function StatsCard({ stats }: StatsCardProps) {
+  if (!stats) {
+    return (
+      <div className="bg-card rounded-xl p-6 border border-border">
+        <p className="text-muted-foreground text-center">
+          Selecione um CRIA para ver as estatisticas
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-card rounded-xl p-6 border border-border shadow-sm">
+      <h3 className="text-lg font-bold text-foreground mb-4">
+        Progresso de {stats.user.name}
+      </h3>
+      
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-muted rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-primary">{stats.obtainedStickers}</p>
+          <p className="text-xs text-muted-foreground">Obtidas</p>
+        </div>
+        <div className="bg-muted rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-foreground">{stats.totalStickers - stats.obtainedStickers}</p>
+          <p className="text-xs text-muted-foreground">Faltando</p>
+        </div>
+        <div className="bg-muted rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-secondary">{stats.repeatedStickers}</p>
+          <p className="text-xs text-muted-foreground">Repetidas</p>
+        </div>
+        <div className="bg-muted rounded-lg p-4 text-center">
+          <p className="text-2xl font-bold text-accent-foreground">{stats.percentage.toFixed(1)}%</p>
+          <p className="text-xs text-muted-foreground">Completo</p>
+        </div>
+      </div>
+
+      <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+        <div
+          className="h-full bg-primary rounded-full transition-all duration-500"
+          style={{ width: `${stats.percentage}%` }}
+        />
+      </div>
+    </div>
+  )
+}
