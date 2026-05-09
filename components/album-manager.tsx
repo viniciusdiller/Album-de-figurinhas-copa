@@ -58,10 +58,10 @@ export function AlbumManager() {
     () => selectedUser ? fetchUserStickers(selectedUser.id) : []
   )
 
-  // Get unique sections
+  // Seções únicas
   const sections = [...new Set(stickers.map((s) => s.section))]
 
-  // Initialize selected sections when stickers load
+  // Inicializa todas as seções selecionadas quando os stickers carregam
   useEffect(() => {
     if (stickers.length > 0 && selectedSections.length === 0) {
       const uniqueSections = [...new Set(stickers.map((s) => s.section))]
@@ -69,7 +69,7 @@ export function AlbumManager() {
     }
   }, [stickers, selectedSections.length])
 
-  // Combine stickers with user status
+  // Combina figurinhas com status do usuário
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
     const userSticker = userStickers.find((us) => us.sticker_id === sticker.id)
     return {
@@ -80,7 +80,7 @@ export function AlbumManager() {
     }
   })
 
-  // Calculate stats
+  // Calcula estatísticas
   const stats: UserStats | null = selectedUser
     ? {
         user: selectedUser,
@@ -110,7 +110,6 @@ export function AlbumManager() {
     
     try {
       if (sticker.user_sticker_id) {
-        // Update existing record
         await supabase
           .from("user_stickers")
           .update({ 
@@ -120,7 +119,6 @@ export function AlbumManager() {
           })
           .eq("id", sticker.user_sticker_id)
       } else {
-        // Create new record
         await supabase
           .from("user_stickers")
           .insert({
@@ -133,7 +131,7 @@ export function AlbumManager() {
       
       await mutateUserStickers()
     } catch (error) {
-      console.error("Error toggling sticker:", error)
+      console.error("Erro ao atualizar figurinha:", error)
     } finally {
       setIsUpdating(false)
     }
@@ -157,7 +155,7 @@ export function AlbumManager() {
       
       await mutateUserStickers()
     } catch (error) {
-      console.error("Error incrementing repeated:", error)
+      console.error("Erro ao incrementar repetidas:", error)
     } finally {
       setIsUpdating(false)
     }
@@ -181,7 +179,7 @@ export function AlbumManager() {
       
       await mutateUserStickers()
     } catch (error) {
-      console.error("Error decrementing repeated:", error)
+      console.error("Erro ao decrementar repetidas:", error)
     } finally {
       setIsUpdating(false)
     }
@@ -199,6 +197,7 @@ export function AlbumManager() {
     setSelectedSections(sections)
   }
 
+  // Limpar = desmarcar todas as seções (para facilitar selecionar só 1)
   const handleClearAllSections = () => {
     setSelectedSections([])
   }
@@ -210,7 +209,7 @@ export function AlbumManager() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando album...</p>
+          <p className="text-muted-foreground">Carregando álbum... ⚽</p>
         </div>
       </div>
     )
@@ -218,10 +217,10 @@ export function AlbumManager() {
 
   return (
     <div className="space-y-6">
-      {/* User Selector */}
+      {/* Seleção de jogador */}
       <div className="text-center space-y-4">
         <h2 className="text-xl md:text-2xl font-bold text-foreground">
-          Selecione o CRIA
+          Quem está jogando? 🎴
         </h2>
         <UserSelector
           users={users}
@@ -232,10 +231,10 @@ export function AlbumManager() {
 
       {selectedUser && (
         <>
-          {/* Stats */}
+          {/* Estatísticas */}
           <StatsCard stats={stats} />
 
-          {/* Section Filter */}
+          {/* Filtro de Seções */}
           <div className="bg-card rounded-xl p-4 border border-border">
             <SectionFilter
               sections={sections}
@@ -246,7 +245,7 @@ export function AlbumManager() {
             />
           </div>
 
-          {/* Sticker Grids */}
+          {/* Grades de Figurinhas */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {selectedSections.map((section) => (
               <StickerGrid
@@ -263,7 +262,7 @@ export function AlbumManager() {
 
           {selectedSections.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-              Selecione pelo menos uma selecao para ver as figurinhas
+              Selecione pelo menos uma seleção para ver as figurinhas 🌍
             </div>
           )}
         </>
