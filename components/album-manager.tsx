@@ -24,14 +24,12 @@ async function fetchStickers(): Promise<Sticker[]> {
   return data || []
 }
 
-// Estado global do álbum (sem user_id)
 async function fetchAlbumStickers(): Promise<AlbumSticker[]> {
   const { data, error } = await supabase.from("album_stickers").select("*")
   if (error) throw error
   return data || []
 }
 
-// Contribuições do usuário selecionado (quantas ele trouxe)
 async function fetchUserStickers(userId: string) {
   const { data, error } = await supabase
     .from("user_stickers")
@@ -41,7 +39,6 @@ async function fetchUserStickers(userId: string) {
   return data || []
 }
 
-// Todas as contribuições de todos os usuários (para o placar)
 async function fetchAllUserStickers() {
   const { data, error } = await supabase.from("user_stickers").select("*")
   if (error) throw error
@@ -53,28 +50,17 @@ export function AlbumManager() {
   const [selectedSections, setSelectedSections] = useState<string[]>([])
   const [isUpdating, setIsUpdating] = useState(false)
 
-  const { data: users = [], isLoading: usersLoading } = useSWR("users", fetchUsers)
+  const { data: users = [] } = useSWR("users", fetchUsers)
   const { data: stickers = [], isLoading: stickersLoading } = useSWR("stickers", fetchStickers)
 
-  // Estado compartilhado do álbum
-  const {
-    data: albumStickers = [],
-    mutate: mutateAlbumStickers,
-    isLoading: albumStickersLoading
-  } = useSWR("album-stickers", fetchAlbumStickers)
+  const { data: albumStickers = [], mutate: mutateAlbum } = useSWR("album-stickers", fetchAlbumStickers, { refreshInterval: 5000 })
 
-  // Contribuições do usuário selecionado
-  const {
-    data: userStickers = [],
-    mutate: mutateUserStickers,
-    isLoading: userStickersLoading
-  } = useSWR(
+  const { data: userStickers = [], mutate: mutateUserStickers } = useSWR(
     selectedUser ? `user-stickers-${selectedUser.id}` : null,
     () => selectedUser ? fetchUserStickers(selectedUser.id) : []
   )
 
-  // Todas as contribuições (para o placar)
-  const { data: allUserStickers = [], mutate: mutateAll } = useSWR("all-user-stickers", fetchAllUserStickers)
+  const { data: allUserStickers = [], mutate: mutateAll } = useSWR("all-user-stickers", fetchAllUserStickers, { refreshInterval: 5000 })
 
   const sections = [...new Set(stickers.map((s) => s.section))]
 
@@ -84,87 +70,74 @@ export function AlbumManager() {
     }
   }, [stickers, selectedSections.length])
 
-  // Combina: estado do álbum compartilhado + contribuições do usuário selecionado
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
     const albumEntry = albumStickers.find((a) => a.sticker_id === sticker.id)
     const userEntry = userStickers.find((us) => us.sticker_id === sticker.id)
     return {
       ...sticker,
-      obtained: albumEntry?.obtained || false,
+      obtained: albumEntry?.obtained ?? false,
       album_sticker_id: albumEntry?.id,
-      contributed_count: userEntry?.contributed_count || 0,
+      contributed_count: userEntry?.contributed_count ?? 0,
       user_sticker_id: userEntry?.id,
     }
   })
 
-  // Placar de contribuições
   const contributions: UserContribution[] = users.map((user) => {
-    const contributed = allUserStickers
-      .filter((us) => us.user_id === user.id)
-      .reduce((acc: number, us: any) => acc + (us.contributed_count || 0), 0)
-    return { user, contributedCount: contributed }
+    const total = allUserStickers
+      .filter((us: any) => us.user_id === user.id)
+      .reduce((acc: number, us: any) => acc + (us.contributed_count ?? 0), 0)
+    return { user, contributedCount: total }
   })
 
-  const stats: UserStats | null = selectedUser
-    ? {
-        user: selectedUser,
-        totalStickers: stickers.length,
-        obtainedStickers: stickersWithStatus.filter((s) => s.obtained).length,
-        contributedStickers: stickersWithStatus.reduce((acc, s) => acc + s.contributed_count, 0),
-        percentage: stickers.length > 0
-          ? (stickersWithStatus.filter((s) => s.obtained).length / stickers.length) * 100
-          : 0,
-        sectionStats: sections.map((section) => {
-          const ss = stickersWithStatus.filter((s) => s.section === section)
-          const obtained = ss.filter((s) => s.obtained).length
-          return {
-            section,
-            total: ss.length,
-            obtained,
-            percentage: ss.length > 0 ? (obtained / ss.length) * 100 : 0,
-          }
-        }),
-      }
-    : null
+  const stats: UserStats | null = selectedUser ? {
+    user: selectedUser,
+    totalStickers: stickers.length,
+    obtainedStickers: stickersWithStatus.filter((s) => s.obtained).length,
+    contributedStickers: stickersWithStatus.reduce((acc, s) => acc + s.contributed_count, 0),
+    percentage: stickers.length > 0
+      ? (stickersWithStatus.filter((s) => s.obtained).length / stickers.length) * 100
+      : 0,
+    sectionStats: sections.map((section) => {
+      const ss = stickersWithStatus.filter((s) => s.section === section)
+      const obtained = ss.filter((s) => s.obtained).length
+      return { section, total: ss.length, obtained, percentage: ss.length > 0 ? (obtained / ss.length) * 100 : 0 }
+    }),
+  } : null
 
-  // Marcar/desmarcar figurinha no ALBUM COMPARTILHADO
+  // Marcar/desmarcar no ÁLBUM COMPARTILHADO via upsert
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
     if (isUpdating) return
     setIsUpdating(true)
     try {
-      if (sticker.album_sticker_id) {
-        await supabase
-          .from("album_stickers")
-          .update({ obtained: !sticker.obtained, updated_at: new Date().toISOString() })
-          .eq("id", sticker.album_sticker_id)
-      } else {
-        await supabase
-          .from("album_stickers")
-          .insert({ sticker_id: sticker.id, obtained: true })
-      }
-      await mutateAlbumStickers()
+      const newValue = !sticker.obtained
+      const { error } = await supabase
+        .from("album_stickers")
+        .upsert(
+          { sticker_id: sticker.id, obtained: newValue, updated_at: new Date().toISOString() },
+          { onConflict: "sticker_id" }
+        )
+      if (error) throw error
+      await mutateAlbum()
     } catch (error) {
-      console.error("Erro ao atualizar figurinha:", error)
+      console.error("Erro ao atualizar álbum:", error)
     } finally {
       setIsUpdating(false)
     }
-  }, [isUpdating, mutateAlbumStickers])
+  }, [isUpdating, mutateAlbum])
 
-  // Incrementar contribuições do usuário selecionado
+  // Incrementar contribuição do usuário selecionado via upsert
   const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
     setIsUpdating(true)
     try {
-      if (sticker.user_sticker_id) {
-        await supabase
-          .from("user_stickers")
-          .update({ contributed_count: sticker.contributed_count + 1, updated_at: new Date().toISOString() })
-          .eq("id", sticker.user_sticker_id)
-      } else {
-        await supabase
-          .from("user_stickers")
-          .insert({ user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: 1 })
-      }
+      const newCount = sticker.contributed_count + 1
+      const { error } = await supabase
+        .from("user_stickers")
+        .upsert(
+          { user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: newCount, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,sticker_id" }
+        )
+      if (error) throw error
       await mutateUserStickers()
       await mutateAll()
     } catch (error) {
@@ -174,17 +147,19 @@ export function AlbumManager() {
     }
   }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
-  // Decrementar contribuições do usuário selecionado
+  // Decrementar contribuição do usuário selecionado
   const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
     setIsUpdating(true)
     try {
-      if (sticker.user_sticker_id) {
-        await supabase
-          .from("user_stickers")
-          .update({ contributed_count: sticker.contributed_count - 1, updated_at: new Date().toISOString() })
-          .eq("id", sticker.user_sticker_id)
-      }
+      const newCount = sticker.contributed_count - 1
+      const { error } = await supabase
+        .from("user_stickers")
+        .upsert(
+          { user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: newCount, updated_at: new Date().toISOString() },
+          { onConflict: "user_id,sticker_id" }
+        )
+      if (error) throw error
       await mutateUserStickers()
       await mutateAll()
     } catch (error) {
@@ -200,9 +175,7 @@ export function AlbumManager() {
     )
   }
 
-  const isLoading = usersLoading || stickersLoading || albumStickersLoading || userStickersLoading
-
-  if (isLoading && !selectedUser) {
+  if (stickersLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -217,25 +190,17 @@ export function AlbumManager() {
     <div className="space-y-6">
       {/* Seleção de jogador */}
       <div className="text-center space-y-4">
-        <h2 className="text-xl md:text-2xl font-bold text-foreground">
-          Quem está usando? 🎴
-        </h2>
-        <UserSelector
-          users={users}
-          selectedUser={selectedUser}
-          onSelectUser={setSelectedUser}
-        />
+        <h2 className="text-xl md:text-2xl font-bold text-foreground">Quem está usando? 🎴</h2>
+        <UserSelector users={users} selectedUser={selectedUser} onSelectUser={setSelectedUser} />
         <p className="text-xs text-muted-foreground">
           💡 O álbum é compartilhado — qualquer um pode marcar figurinhas!
         </p>
       </div>
 
-      {/* Estatísticas do usuário selecionado */}
       {selectedUser && <StatsCard stats={stats} />}
 
       {selectedUser && (
         <>
-          {/* Filtro de Seções */}
           <div className="bg-card rounded-xl p-4 border border-border">
             <SectionFilter
               sections={sections}
@@ -246,7 +211,6 @@ export function AlbumManager() {
             />
           </div>
 
-          {/* Grades de Figurinhas */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {selectedSections.map((section) => (
               <StickerGrid
@@ -269,7 +233,7 @@ export function AlbumManager() {
         </>
       )}
 
-      {/* PLACAR DE CONTRIBUIÇÕES - sempre visível */}
+      {/* PLACAR — sempre visível */}
       {users.length > 0 && (
         <ContributionsBoard
           contributions={contributions}
