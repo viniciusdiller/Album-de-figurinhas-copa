@@ -7,8 +7,8 @@ interface StickerGridProps {
   section: string
   stickers: StickerWithStatus[]
   onToggleObtained: (sticker: StickerWithStatus) => void
-  onIncrementRepeated: (sticker: StickerWithStatus) => void
-  onDecrementRepeated: (sticker: StickerWithStatus) => void
+  onIncrementContributed: (sticker: StickerWithStatus) => void
+  onDecrementContributed: (sticker: StickerWithStatus) => void
   isLoading?: boolean
 }
 
@@ -16,14 +16,14 @@ export function StickerGrid({
   section,
   stickers,
   onToggleObtained,
-  onIncrementRepeated,
-  onDecrementRepeated,
+  onIncrementContributed,
+  onDecrementContributed,
   isLoading,
 }: StickerGridProps) {
   const sectionStickers = stickers.filter((s) => s.section === section)
   const obtainedCount = sectionStickers.filter((s) => s.obtained).length
-  const percentage = sectionStickers.length > 0 
-    ? (obtainedCount / sectionStickers.length) * 100 
+  const percentage = sectionStickers.length > 0
+    ? (obtainedCount / sectionStickers.length) * 100
     : 0
 
   return (
@@ -39,14 +39,14 @@ export function StickerGrid({
         <div className="w-full bg-border rounded-full h-1.5 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
-            style={{ 
+            style={{
               width: `${percentage}%`,
               background: `linear-gradient(90deg, oklch(0.40 0.18 145), oklch(0.78 0.18 85))`
             }}
           />
         </div>
       </div>
-      
+
       <div className="p-3 grid grid-cols-5 gap-2">
         {sectionStickers.map((sticker) => (
           <div
@@ -64,20 +64,21 @@ export function StickerGrid({
             <span className="text-[10px] md:text-xs leading-none">
               {sticker.code.split(" ")[1]}
             </span>
-            
-            {sticker.obtained && sticker.repeated_count > 0 && (
+
+            {sticker.obtained && sticker.contributed_count > 0 && (
               <span className="absolute -top-1 -right-1 bg-secondary text-secondary-foreground text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-sm">
-                {sticker.repeated_count}
+                {sticker.contributed_count}
               </span>
             )}
           </div>
         ))}
       </div>
 
+      {/* Contador de contribuições do usuário selecionado */}
       {sectionStickers.some((s) => s.obtained) && (
         <div className="px-3 pb-3">
           <p className="text-[10px] text-muted-foreground mb-2 font-medium">
-            🔄 Repetidas (clique para ajustar):
+            📊 Minhas contribuições (ajustar):
           </p>
           <div className="flex flex-wrap gap-1">
             {sectionStickers
@@ -91,23 +92,17 @@ export function StickerGrid({
                     {sticker.code.split(" ")[1]}
                   </span>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onDecrementRepeated(sticker)
-                    }}
-                    disabled={sticker.repeated_count === 0 || isLoading}
+                    onClick={(e) => { e.stopPropagation(); onDecrementContributed(sticker) }}
+                    disabled={sticker.contributed_count === 0 || isLoading}
                     className="w-4 h-4 rounded bg-destructive/20 text-destructive text-[10px] flex items-center justify-center hover:bg-destructive/30 disabled:opacity-30 font-bold"
                   >
                     -
                   </button>
                   <span className="text-[10px] text-secondary-foreground font-bold min-w-[12px] text-center">
-                    {sticker.repeated_count}
+                    {sticker.contributed_count}
                   </span>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onIncrementRepeated(sticker)
-                    }}
+                    onClick={(e) => { e.stopPropagation(); onIncrementContributed(sticker) }}
                     disabled={isLoading}
                     className="w-4 h-4 rounded bg-primary/20 text-primary text-[10px] flex items-center justify-center hover:bg-primary/30 disabled:opacity-30 font-bold"
                   >

@@ -3,40 +3,47 @@
 import { useState, useEffect, useCallback } from "react"
 import useSWR from "swr"
 import { createClient } from "@/lib/supabase/client"
-import { User, Sticker, StickerWithStatus, UserStats } from "@/lib/types"
+import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribution } from "@/lib/types"
 import { UserSelector } from "./user-selector"
 import { StatsCard } from "./stats-card"
 import { StickerGrid } from "./sticker-grid"
 import { SectionFilter } from "./section-filter"
+import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
 
 async function fetchUsers(): Promise<User[]> {
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .order("name")
-  
+  const { data, error } = await supabase.from("users").select("*").order("name")
   if (error) throw error
   return data || []
 }
 
 async function fetchStickers(): Promise<Sticker[]> {
-  const { data, error } = await supabase
-    .from("stickers")
-    .select("*")
-    .order("id")
-  
+  const { data, error } = await supabase.from("stickers").select("*").order("id")
   if (error) throw error
   return data || []
 }
 
+// Estado global do álbum (sem user_id)
+async function fetchAlbumStickers(): Promise<AlbumSticker[]> {
+  const { data, error } = await supabase.from("album_stickers").select("*")
+  if (error) throw error
+  return data || []
+}
+
+// Contribuições do usuário selecionado (quantas ele trouxe)
 async function fetchUserStickers(userId: string) {
   const { data, error } = await supabase
     .from("user_stickers")
     .select("*")
     .eq("user_id", userId)
-  
+  if (error) throw error
+  return data || []
+}
+
+// Todas as contribuições de todos os usuários (para o placar)
+async function fetchAllUserStickers() {
+  const { data, error } = await supabase.from("user_stickers").select("*")
   if (error) throw error
   return data || []
 }
@@ -48,161 +55,152 @@ export function AlbumManager() {
 
   const { data: users = [], isLoading: usersLoading } = useSWR("users", fetchUsers)
   const { data: stickers = [], isLoading: stickersLoading } = useSWR("stickers", fetchStickers)
-  
-  const { 
-    data: userStickers = [], 
+
+  // Estado compartilhado do álbum
+  const {
+    data: albumStickers = [],
+    mutate: mutateAlbumStickers,
+    isLoading: albumStickersLoading
+  } = useSWR("album-stickers", fetchAlbumStickers)
+
+  // Contribuições do usuário selecionado
+  const {
+    data: userStickers = [],
     mutate: mutateUserStickers,
-    isLoading: userStickersLoading 
+    isLoading: userStickersLoading
   } = useSWR(
     selectedUser ? `user-stickers-${selectedUser.id}` : null,
     () => selectedUser ? fetchUserStickers(selectedUser.id) : []
   )
 
-  // Seções únicas
+  // Todas as contribuições (para o placar)
+  const { data: allUserStickers = [], mutate: mutateAll } = useSWR("all-user-stickers", fetchAllUserStickers)
+
   const sections = [...new Set(stickers.map((s) => s.section))]
 
-  // Inicializa todas as seções selecionadas quando os stickers carregam
   useEffect(() => {
     if (stickers.length > 0 && selectedSections.length === 0) {
-      const uniqueSections = [...new Set(stickers.map((s) => s.section))]
-      setSelectedSections(uniqueSections)
+      setSelectedSections([...new Set(stickers.map((s) => s.section))])
     }
   }, [stickers, selectedSections.length])
 
-  // Combina figurinhas com status do usuário
+  // Combina: estado do álbum compartilhado + contribuições do usuário selecionado
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
-    const userSticker = userStickers.find((us) => us.sticker_id === sticker.id)
+    const albumEntry = albumStickers.find((a) => a.sticker_id === sticker.id)
+    const userEntry = userStickers.find((us) => us.sticker_id === sticker.id)
     return {
       ...sticker,
-      obtained: userSticker?.obtained || false,
-      repeated_count: userSticker?.repeated_count || 0,
-      user_sticker_id: userSticker?.id,
+      obtained: albumEntry?.obtained || false,
+      album_sticker_id: albumEntry?.id,
+      contributed_count: userEntry?.contributed_count || 0,
+      user_sticker_id: userEntry?.id,
     }
   })
 
-  // Calcula estatísticas
+  // Placar de contribuições
+  const contributions: UserContribution[] = users.map((user) => {
+    const contributed = allUserStickers
+      .filter((us) => us.user_id === user.id)
+      .reduce((acc: number, us: any) => acc + (us.contributed_count || 0), 0)
+    return { user, contributedCount: contributed }
+  })
+
   const stats: UserStats | null = selectedUser
     ? {
         user: selectedUser,
         totalStickers: stickers.length,
         obtainedStickers: stickersWithStatus.filter((s) => s.obtained).length,
-        repeatedStickers: stickersWithStatus.reduce((acc, s) => acc + s.repeated_count, 0),
+        contributedStickers: stickersWithStatus.reduce((acc, s) => acc + s.contributed_count, 0),
         percentage: stickers.length > 0
           ? (stickersWithStatus.filter((s) => s.obtained).length / stickers.length) * 100
           : 0,
         sectionStats: sections.map((section) => {
-          const sectionStickers = stickersWithStatus.filter((s) => s.section === section)
-          const obtained = sectionStickers.filter((s) => s.obtained).length
+          const ss = stickersWithStatus.filter((s) => s.section === section)
+          const obtained = ss.filter((s) => s.obtained).length
           return {
             section,
-            total: sectionStickers.length,
+            total: ss.length,
             obtained,
-            percentage: sectionStickers.length > 0 ? (obtained / sectionStickers.length) * 100 : 0,
+            percentage: ss.length > 0 ? (obtained / ss.length) * 100 : 0,
           }
         }),
       }
     : null
 
+  // Marcar/desmarcar figurinha no ALBUM COMPARTILHADO
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
-    if (!selectedUser || isUpdating) return
-
+    if (isUpdating) return
     setIsUpdating(true)
-    
     try {
-      if (sticker.user_sticker_id) {
+      if (sticker.album_sticker_id) {
         await supabase
-          .from("user_stickers")
-          .update({ 
-            obtained: !sticker.obtained,
-            repeated_count: !sticker.obtained ? sticker.repeated_count : 0,
-            updated_at: new Date().toISOString()
-          })
-          .eq("id", sticker.user_sticker_id)
+          .from("album_stickers")
+          .update({ obtained: !sticker.obtained, updated_at: new Date().toISOString() })
+          .eq("id", sticker.album_sticker_id)
       } else {
         await supabase
-          .from("user_stickers")
-          .insert({
-            user_id: selectedUser.id,
-            sticker_id: sticker.id,
-            obtained: true,
-            repeated_count: 0,
-          })
+          .from("album_stickers")
+          .insert({ sticker_id: sticker.id, obtained: true })
       }
-      
-      await mutateUserStickers()
+      await mutateAlbumStickers()
     } catch (error) {
       console.error("Erro ao atualizar figurinha:", error)
     } finally {
       setIsUpdating(false)
     }
-  }, [selectedUser, isUpdating, mutateUserStickers])
+  }, [isUpdating, mutateAlbumStickers])
 
-  const handleIncrementRepeated = useCallback(async (sticker: StickerWithStatus) => {
+  // Incrementar contribuições do usuário selecionado
+  const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
-
     setIsUpdating(true)
-    
     try {
       if (sticker.user_sticker_id) {
         await supabase
           .from("user_stickers")
-          .update({ 
-            repeated_count: sticker.repeated_count + 1,
-            updated_at: new Date().toISOString()
-          })
+          .update({ contributed_count: sticker.contributed_count + 1, updated_at: new Date().toISOString() })
           .eq("id", sticker.user_sticker_id)
+      } else {
+        await supabase
+          .from("user_stickers")
+          .insert({ user_id: selectedUser.id, sticker_id: sticker.id, contributed_count: 1 })
       }
-      
       await mutateUserStickers()
+      await mutateAll()
     } catch (error) {
-      console.error("Erro ao incrementar repetidas:", error)
+      console.error("Erro ao incrementar:", error)
     } finally {
       setIsUpdating(false)
     }
-  }, [selectedUser, isUpdating, mutateUserStickers])
+  }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
-  const handleDecrementRepeated = useCallback(async (sticker: StickerWithStatus) => {
-    if (!selectedUser || isUpdating || !sticker.obtained || sticker.repeated_count === 0) return
-
+  // Decrementar contribuições do usuário selecionado
+  const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
+    if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
     setIsUpdating(true)
-    
     try {
       if (sticker.user_sticker_id) {
         await supabase
           .from("user_stickers")
-          .update({ 
-            repeated_count: sticker.repeated_count - 1,
-            updated_at: new Date().toISOString()
-          })
+          .update({ contributed_count: sticker.contributed_count - 1, updated_at: new Date().toISOString() })
           .eq("id", sticker.user_sticker_id)
       }
-      
       await mutateUserStickers()
+      await mutateAll()
     } catch (error) {
-      console.error("Erro ao decrementar repetidas:", error)
+      console.error("Erro ao decrementar:", error)
     } finally {
       setIsUpdating(false)
     }
-  }, [selectedUser, isUpdating, mutateUserStickers])
+  }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
   const handleToggleSection = (section: string) => {
     setSelectedSections((prev) =>
-      prev.includes(section)
-        ? prev.filter((s) => s !== section)
-        : [...prev, section]
+      prev.includes(section) ? prev.filter((s) => s !== section) : [...prev, section]
     )
   }
 
-  const handleSelectAllSections = () => {
-    setSelectedSections(sections)
-  }
-
-  // Limpar = desmarcar todas as seções (para facilitar selecionar só 1)
-  const handleClearAllSections = () => {
-    setSelectedSections([])
-  }
-
-  const isLoading = usersLoading || stickersLoading || userStickersLoading
+  const isLoading = usersLoading || stickersLoading || albumStickersLoading || userStickersLoading
 
   if (isLoading && !selectedUser) {
     return (
@@ -220,28 +218,31 @@ export function AlbumManager() {
       {/* Seleção de jogador */}
       <div className="text-center space-y-4">
         <h2 className="text-xl md:text-2xl font-bold text-foreground">
-          Quem está jogando? 🎴
+          Quem está usando? 🎴
         </h2>
         <UserSelector
           users={users}
           selectedUser={selectedUser}
           onSelectUser={setSelectedUser}
         />
+        <p className="text-xs text-muted-foreground">
+          💡 O álbum é compartilhado — qualquer um pode marcar figurinhas!
+        </p>
       </div>
+
+      {/* Estatísticas do usuário selecionado */}
+      {selectedUser && <StatsCard stats={stats} />}
 
       {selectedUser && (
         <>
-          {/* Estatísticas */}
-          <StatsCard stats={stats} />
-
           {/* Filtro de Seções */}
           <div className="bg-card rounded-xl p-4 border border-border">
             <SectionFilter
               sections={sections}
               selectedSections={selectedSections}
               onToggleSection={handleToggleSection}
-              onSelectAll={handleSelectAllSections}
-              onClearAll={handleClearAllSections}
+              onSelectAll={() => setSelectedSections(sections)}
+              onClearAll={() => setSelectedSections([])}
             />
           </div>
 
@@ -253,8 +254,8 @@ export function AlbumManager() {
                 section={section}
                 stickers={stickersWithStatus}
                 onToggleObtained={handleToggleObtained}
-                onIncrementRepeated={handleIncrementRepeated}
-                onDecrementRepeated={handleDecrementRepeated}
+                onIncrementContributed={handleIncrementContributed}
+                onDecrementContributed={handleDecrementContributed}
                 isLoading={isUpdating}
               />
             ))}
@@ -266,6 +267,15 @@ export function AlbumManager() {
             </div>
           )}
         </>
+      )}
+
+      {/* PLACAR DE CONTRIBUIÇÕES - sempre visível */}
+      {users.length > 0 && (
+        <ContributionsBoard
+          contributions={contributions}
+          totalObtained={stickersWithStatus.filter((s) => s.obtained).length}
+          totalStickers={stickers.length}
+        />
       )}
     </div>
   )
