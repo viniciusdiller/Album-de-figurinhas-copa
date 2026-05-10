@@ -59,7 +59,13 @@ export function StickerGrid({
               sticker.is_special && "ring-2 ring-secondary ring-offset-1",
               isLoading && "opacity-50 pointer-events-none"
             )}
-            onClick={() => onToggleObtained(sticker)}
+            onClick={() =>
+              // Se já está obtida → incrementa a contribuição do participante selecionado
+              // Se ainda não está obtida → marca como obtida no álbum compartilhado
+              sticker.obtained
+                ? onIncrementContributed(sticker)
+                : onToggleObtained(sticker)
+            }
           >
             <span className="text-[10px] md:text-xs leading-none">
               {sticker.code.split(" ")[1]}
