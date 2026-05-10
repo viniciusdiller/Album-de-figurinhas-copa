@@ -12,6 +12,24 @@ import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
 
+// Chama a RPC via fetch direto para não depender de tipos gerados
+async function callIncrementContribution(userId: string, stickerId: number, delta: number) {
+  const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/increment_contribution`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      "Authorization": `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+    },
+    body: JSON.stringify({ p_user_id: userId, p_sticker_id: stickerId, p_delta: delta }),
+  })
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`RPC error: ${err}`)
+  }
+}
+
 async function fetchUsers(): Promise<User[]> {
   const { data, error } = await supabase.from("users").select("*").order("name")
   if (error) throw error
@@ -76,7 +94,6 @@ export function AlbumManager() {
 
   const sections = [...new Set(stickers.map((s) => s.section))]
 
-  // Inicializa seções UMA só vez
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
@@ -96,7 +113,6 @@ export function AlbumManager() {
     }
   })
 
-  // Placar: soma contributed_count por usuário
   const contributions: UserContribution[] = users.map((user) => {
     const total = (allUserStickers as any[]).reduce((acc: number, row: any) => {
       return String(row.user_id) === String(user.id)
@@ -121,7 +137,6 @@ export function AlbumManager() {
     }),
   } : null
 
-  // Toggle do álbum compartilhado
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
     if (isUpdating) return
     setIsUpdating(true)
@@ -141,17 +156,11 @@ export function AlbumManager() {
     }
   }, [isUpdating, mutateAlbum])
 
-  // Incremento atômico via RPC — sem race condition, sem bug de id indefinido
   const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
     setIsUpdating(true)
     try {
-      const { error } = await supabase.rpc("increment_contribution", {
-        p_user_id: selectedUser.id,
-        p_sticker_id: sticker.id,
-        p_delta: 1,
-      })
-      if (error) throw error
+      await callIncrementContribution(selectedUser.id, sticker.id, 1)
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
@@ -161,17 +170,11 @@ export function AlbumManager() {
     }
   }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
-  // Decremento atômico via RPC
   const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
     setIsUpdating(true)
     try {
-      const { error } = await supabase.rpc("increment_contribution", {
-        p_user_id: selectedUser.id,
-        p_sticker_id: sticker.id,
-        p_delta: -1,
-      })
-      if (error) throw error
+      await callIncrementContribution(selectedUser.id, sticker.id, -1)
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
