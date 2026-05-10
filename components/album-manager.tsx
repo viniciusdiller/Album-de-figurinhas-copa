@@ -12,7 +12,6 @@ import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
 
-// Chama a RPC via fetch direto para não depender de tipos gerados
 async function callIncrementContribution(userId: string, stickerId: number, delta: number) {
   const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/increment_contribution`
   const res = await fetch(url, {
@@ -69,7 +68,13 @@ export function AlbumManager() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [selectedSections, setSelectedSections] = useState<string[]>([])
   const sectionsInitialized = useRef(false)
-  const [isUpdating, setIsUpdating] = useState(false)
+
+  // Ref para pendingStickers: sticker_id -> estado obtido otimista
+  const optimisticObtained = useRef<Record<number, boolean>>({})
+  // Ref para pendingContributions: sticker_id -> contributed_count otimista
+  const optimisticContrib = useRef<Record<number, number>>({})
+  // Ref para allUserStickers otimista por user_id
+  const optimisticAll = useRef<Record<string, Record<number, number>>>({})
 
   const { data: users = [] } = useSWR("users", fetchUsers)
   const { data: stickers = [], isLoading: stickersLoading } = useSWR("stickers", fetchStickers)
@@ -101,25 +106,44 @@ export function AlbumManager() {
     }
   }, [stickers])
 
+  // Limpa otimistas quando os dados do SWR chegam frescos
+  useEffect(() => { optimisticObtained.current = {} }, [albumStickers])
+  useEffect(() => { optimisticContrib.current = {} }, [userStickers])
+  useEffect(() => { optimisticAll.current = {} }, [allUserStickers])
+
   const stickersWithStatus: StickerWithStatus[] = stickers.map((sticker) => {
     const albumEntry = albumStickers.find((a) => a.sticker_id === sticker.id)
     const userEntry = (userStickers as any[]).find((us) => us.sticker_id === sticker.id)
+
+    // Aplica optimistic override se existir
+    const obtained = sticker.id in optimisticObtained.current
+      ? optimisticObtained.current[sticker.id]
+      : (albumEntry?.obtained ?? false)
+
+    const contributed_count = sticker.id in optimisticContrib.current
+      ? optimisticContrib.current[sticker.id]
+      : (Number(userEntry?.contributed_count) || 0)
+
     return {
       ...sticker,
-      obtained: albumEntry?.obtained ?? false,
+      obtained,
       album_sticker_id: albumEntry?.id,
-      contributed_count: Number(userEntry?.contributed_count) || 0,
+      contributed_count,
       user_sticker_id: userEntry?.id,
     }
   })
 
   const contributions: UserContribution[] = users.map((user) => {
-    const total = (allUserStickers as any[]).reduce((acc: number, row: any) => {
+    const baseTotal = (allUserStickers as any[]).reduce((acc: number, row: any) => {
       return String(row.user_id) === String(user.id)
         ? acc + (Number(row.contributed_count) || 0)
         : acc
     }, 0)
-    return { user, contributedCount: total }
+    // Aplica optimistic da contrib de cada user
+    const optimisticDelta = Object.values(optimisticAll.current[user.id] ?? {}).reduce(
+      (acc, v) => acc + v, 0
+    )
+    return { user, contributedCount: baseTotal + optimisticDelta }
   })
 
   const stats: UserStats | null = selectedUser ? {
@@ -137,52 +161,87 @@ export function AlbumManager() {
     }),
   } : null
 
-  const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
-    if (isUpdating) return
-    setIsUpdating(true)
-    try {
-      const { error } = await supabase
-        .from("album_stickers")
-        .upsert(
-          { sticker_id: sticker.id, obtained: !sticker.obtained, updated_at: new Date().toISOString() },
-          { onConflict: "sticker_id" }
-        )
-      if (error) throw error
-      await mutateAlbum()
-    } catch (err) {
-      console.error("Erro ao atualizar álbum:", err)
-    } finally {
-      setIsUpdating(false)
-    }
-  }, [isUpdating, mutateAlbum])
+  // Clique principal na figurinha:
+  // - Se NÃO obtida: marca como obtida (toggle) no álbum compartilhado
+  // - Se JÁ obtida: incrementa contribuição do participante selecionado
+  const handleStickerClick = useCallback(async (sticker: StickerWithStatus) => {
+    // Lê o estado atual direto dos refs otimistas para evitar stale closure
+    const currentObtained = sticker.id in optimisticObtained.current
+      ? optimisticObtained.current[sticker.id]
+      : sticker.obtained
 
-  const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
-    if (!selectedUser || isUpdating || !sticker.obtained) return
-    setIsUpdating(true)
-    try {
-      await callIncrementContribution(selectedUser.id, sticker.id, 1)
-      await mutateUserStickers()
-      await mutateAll()
-    } catch (err) {
-      console.error("Erro ao incrementar:", err)
-    } finally {
-      setIsUpdating(false)
+    if (!currentObtained) {
+      // ── MARCA COMO OBTIDA ──
+      // Optimistic update imediato
+      optimisticObtained.current[sticker.id] = true
+      try {
+        const { error } = await supabase
+          .from("album_stickers")
+          .upsert(
+            { sticker_id: sticker.id, obtained: true, updated_at: new Date().toISOString() },
+            { onConflict: "sticker_id" }
+          )
+        if (error) throw error
+      } catch (err) {
+        // Reverte optimistic em caso de erro
+        delete optimisticObtained.current[sticker.id]
+        console.error("Erro ao marcar figurinha:", err)
+      } finally {
+        await mutateAlbum()
+      }
+    } else {
+      // ── INCREMENTA CONTRIBUIÇÃO ──
+      if (!selectedUser) return
+
+      const currentCount = sticker.id in optimisticContrib.current
+        ? optimisticContrib.current[sticker.id]
+        : sticker.contributed_count
+
+      // Optimistic update imediato
+      optimisticContrib.current[sticker.id] = currentCount + 1
+      if (!optimisticAll.current[selectedUser.id]) optimisticAll.current[selectedUser.id] = {}
+      optimisticAll.current[selectedUser.id][sticker.id] = (optimisticAll.current[selectedUser.id][sticker.id] ?? 0) + 1
+
+      try {
+        await callIncrementContribution(selectedUser.id, sticker.id, 1)
+      } catch (err) {
+        // Reverte optimistic
+        optimisticContrib.current[sticker.id] = currentCount
+        optimisticAll.current[selectedUser.id][sticker.id] -= 1
+        console.error("Erro ao incrementar:", err)
+      } finally {
+        await mutateUserStickers()
+        await mutateAll()
+      }
     }
-  }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
+  }, [selectedUser, mutateAlbum, mutateUserStickers, mutateAll])
 
   const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
-    if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
-    setIsUpdating(true)
+    if (!selectedUser) return
+
+    const currentCount = sticker.id in optimisticContrib.current
+      ? optimisticContrib.current[sticker.id]
+      : sticker.contributed_count
+
+    if (currentCount === 0) return
+
+    // Optimistic update imediato
+    optimisticContrib.current[sticker.id] = currentCount - 1
+    if (!optimisticAll.current[selectedUser.id]) optimisticAll.current[selectedUser.id] = {}
+    optimisticAll.current[selectedUser.id][sticker.id] = (optimisticAll.current[selectedUser.id][sticker.id] ?? 0) - 1
+
     try {
       await callIncrementContribution(selectedUser.id, sticker.id, -1)
-      await mutateUserStickers()
-      await mutateAll()
     } catch (err) {
+      // Reverte
+      optimisticContrib.current[sticker.id] = currentCount
+      optimisticAll.current[selectedUser.id][sticker.id] += 1
       console.error("Erro ao decrementar:", err)
     } finally {
-      setIsUpdating(false)
+      await mutateUserStickers()
+      await mutateAll()
     }
-  }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
+  }, [selectedUser, mutateUserStickers, mutateAll])
 
   const handleToggleSection = (section: string) => {
     setSelectedSections((prev) =>
@@ -235,10 +294,8 @@ export function AlbumManager() {
                   key={section}
                   section={section}
                   stickers={stickersWithStatus}
-                  onToggleObtained={handleToggleObtained}
-                  onIncrementContributed={handleIncrementContributed}
+                  onStickerClick={handleStickerClick}
                   onDecrementContributed={handleDecrementContributed}
-                  isLoading={isUpdating}
                 />
               ))}
             </div>

@@ -6,19 +6,16 @@ import { cn } from "@/lib/utils"
 interface StickerGridProps {
   section: string
   stickers: StickerWithStatus[]
-  onToggleObtained: (sticker: StickerWithStatus) => void
-  onIncrementContributed: (sticker: StickerWithStatus) => void
+  // Clique principal: se não obtida → marca; se obtida → incrementa contribuição
+  onStickerClick: (sticker: StickerWithStatus) => void
   onDecrementContributed: (sticker: StickerWithStatus) => void
-  isLoading?: boolean
 }
 
 export function StickerGrid({
   section,
   stickers,
-  onToggleObtained,
-  onIncrementContributed,
+  onStickerClick,
   onDecrementContributed,
-  isLoading,
 }: StickerGridProps) {
   const sectionStickers = stickers.filter((s) => s.section === section)
   const obtainedCount = sectionStickers.filter((s) => s.obtained).length
@@ -28,7 +25,7 @@ export function StickerGrid({
 
   return (
     <div className="bg-card rounded-xl border border-border overflow-hidden shadow-sm">
-      {/* Cabeçalho com mini barra de progresso */}
+      {/* Cabeçalho */}
       <div className="bg-muted px-4 py-3">
         <div className="flex items-center justify-between mb-1.5">
           <h4 className="font-bold text-foreground text-sm">🌍 {section}</h4>
@@ -47,25 +44,20 @@ export function StickerGrid({
         </div>
       </div>
 
+      {/* Grid de figurinhas */}
       <div className="p-3 grid grid-cols-5 gap-2">
         {sectionStickers.map((sticker) => (
           <div
             key={sticker.id}
+            title={sticker.obtained ? `Clique para +1 em ${sticker.code}` : `Clique para marcar ${sticker.code}`}
             className={cn(
-              "relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all duration-200 cursor-pointer select-none",
+              "relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-semibold transition-all duration-200 cursor-pointer select-none active:scale-95",
               sticker.obtained
-                ? "bg-primary text-primary-foreground shadow-sm"
+                ? "bg-primary text-primary-foreground shadow-sm hover:bg-primary/80"
                 : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-              sticker.is_special && "ring-2 ring-secondary ring-offset-1",
-              isLoading && "opacity-50 pointer-events-none"
+              sticker.is_special && "ring-2 ring-secondary ring-offset-1"
             )}
-            onClick={() =>
-              // Se já está obtida → incrementa a contribuição do participante selecionado
-              // Se ainda não está obtida → marca como obtida no álbum compartilhado
-              sticker.obtained
-                ? onIncrementContributed(sticker)
-                : onToggleObtained(sticker)
-            }
+            onClick={() => onStickerClick(sticker)}
           >
             <span className="text-[10px] md:text-xs leading-none">
               {sticker.code.split(" ")[1]}
@@ -80,15 +72,15 @@ export function StickerGrid({
         ))}
       </div>
 
-      {/* Contador de contribuições do usuário selecionado */}
-      {sectionStickers.some((s) => s.obtained) && (
+      {/* Ajuste fino de contribuições (botão - para corrigir erros) */}
+      {sectionStickers.some((s) => s.obtained && s.contributed_count > 0) && (
         <div className="px-3 pb-3">
           <p className="text-[10px] text-muted-foreground mb-2 font-medium">
-            📊 Minhas contribuições (ajustar):
+            📊 Contribuições (clique na figurinha para +1, use − para corrigir):
           </p>
           <div className="flex flex-wrap gap-1">
             {sectionStickers
-              .filter((s) => s.obtained)
+              .filter((s) => s.obtained && s.contributed_count > 0)
               .map((sticker) => (
                 <div
                   key={sticker.id}
@@ -99,21 +91,14 @@ export function StickerGrid({
                   </span>
                   <button
                     onClick={(e) => { e.stopPropagation(); onDecrementContributed(sticker) }}
-                    disabled={sticker.contributed_count === 0 || isLoading}
+                    disabled={sticker.contributed_count === 0}
                     className="w-4 h-4 rounded bg-destructive/20 text-destructive text-[10px] flex items-center justify-center hover:bg-destructive/30 disabled:opacity-30 font-bold"
                   >
-                    -
+                    −
                   </button>
                   <span className="text-[10px] text-secondary-foreground font-bold min-w-[12px] text-center">
                     {sticker.contributed_count}
                   </span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onIncrementContributed(sticker) }}
-                    disabled={isLoading}
-                    className="w-4 h-4 rounded bg-primary/20 text-primary text-[10px] flex items-center justify-center hover:bg-primary/30 disabled:opacity-30 font-bold"
-                  >
-                    +
-                  </button>
                 </div>
               ))}
           </div>
