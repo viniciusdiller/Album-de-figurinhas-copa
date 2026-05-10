@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import useSWR from "swr"
 import { createClient } from "@/lib/supabase/client"
 import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribution } from "@/lib/types"
@@ -33,34 +33,18 @@ async function fetchAlbumStickers(): Promise<AlbumSticker[]> {
 async function fetchUserStickers(userId: string) {
   const { data, error } = await supabase
     .from("user_stickers")
-    .select("*")
+    .select("sticker_id, contributed_count")
     .eq("user_id", userId)
   if (error) throw error
   return data || []
 }
 
 async function fetchAllUserStickers() {
-  const { data, error } = await supabase.from("user_stickers").select("user_id, contributed_count")
+  const { data, error } = await supabase
+    .from("user_stickers")
+    .select("user_id, contributed_count")
   if (error) throw error
   return data || []
-}
-
-// Atualiza contributed_count usando insert ou update dependendo se já existe registro
-async function setContributedCount(userId: string, stickerId: number, currentId: string | undefined, newCount: number) {
-  if (currentId) {
-    // Registro já existe — atualiza pelo id (PK, sem ambigu idade)
-    const { error } = await supabase
-      .from("user_stickers")
-      .update({ contributed_count: newCount, updated_at: new Date().toISOString() })
-      .eq("id", currentId)
-    if (error) throw error
-  } else {
-    // Registro novo — insere
-    const { error } = await supabase
-      .from("user_stickers")
-      .insert({ user_id: userId, sticker_id: stickerId, contributed_count: newCount })
-    if (error) throw error
-  }
 }
 
 export function AlbumManager() {
@@ -80,7 +64,8 @@ export function AlbumManager() {
 
   const { data: userStickers = [], mutate: mutateUserStickers } = useSWR(
     selectedUser ? `user-stickers-${selectedUser.id}` : null,
-    () => selectedUser ? fetchUserStickers(selectedUser.id) : []
+    () => selectedUser ? fetchUserStickers(selectedUser.id) : [],
+    { refreshInterval: 3000 }
   )
 
   const { data: allUserStickers = [], mutate: mutateAll } = useSWR(
@@ -91,7 +76,7 @@ export function AlbumManager() {
 
   const sections = [...new Set(stickers.map((s) => s.section))]
 
-  // Inicializa seções UMA SÓ VEZ
+  // Inicializa seções UMA só vez
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
@@ -111,13 +96,12 @@ export function AlbumManager() {
     }
   })
 
-  // Placar: soma contributed_count de todos registros de cada usuário
+  // Placar: soma contributed_count por usuário
   const contributions: UserContribution[] = users.map((user) => {
-    const total = (allUserStickers as any[]).reduce((acc: number, us: any) => {
-      if (String(us.user_id) === String(user.id)) {
-        return acc + (Number(us.contributed_count) || 0)
-      }
-      return acc
+    const total = (allUserStickers as any[]).reduce((acc: number, row: any) => {
+      return String(row.user_id) === String(user.id)
+        ? acc + (Number(row.contributed_count) || 0)
+        : acc
     }, 0)
     return { user, contributedCount: total }
   })
@@ -137,7 +121,7 @@ export function AlbumManager() {
     }),
   } : null
 
-  // Marcar/desmarcar no ÁLBUM COMPARTILHADO via upsert (só 1 campo de conflito)
+  // Toggle do álbum compartilhado
   const handleToggleObtained = useCallback(async (sticker: StickerWithStatus) => {
     if (isUpdating) return
     setIsUpdating(true)
@@ -157,17 +141,17 @@ export function AlbumManager() {
     }
   }, [isUpdating, mutateAlbum])
 
-  // Incrementar: usa insert/update explícito para evitar bug do onConflict composto
+  // Incremento atômico via RPC — sem race condition, sem bug de id indefinido
   const handleIncrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained) return
     setIsUpdating(true)
     try {
-      await setContributedCount(
-        selectedUser.id,
-        sticker.id,
-        sticker.user_sticker_id,
-        sticker.contributed_count + 1
-      )
+      const { error } = await supabase.rpc("increment_contribution", {
+        p_user_id: selectedUser.id,
+        p_sticker_id: sticker.id,
+        p_delta: 1,
+      })
+      if (error) throw error
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
@@ -177,17 +161,17 @@ export function AlbumManager() {
     }
   }, [selectedUser, isUpdating, mutateUserStickers, mutateAll])
 
-  // Decrementar
+  // Decremento atômico via RPC
   const handleDecrementContributed = useCallback(async (sticker: StickerWithStatus) => {
     if (!selectedUser || isUpdating || !sticker.obtained || sticker.contributed_count === 0) return
     setIsUpdating(true)
     try {
-      await setContributedCount(
-        selectedUser.id,
-        sticker.id,
-        sticker.user_sticker_id,
-        sticker.contributed_count - 1
-      )
+      const { error } = await supabase.rpc("increment_contribution", {
+        p_user_id: selectedUser.id,
+        p_sticker_id: sticker.id,
+        p_delta: -1,
+      })
+      if (error) throw error
       await mutateUserStickers()
       await mutateAll()
     } catch (err) {
