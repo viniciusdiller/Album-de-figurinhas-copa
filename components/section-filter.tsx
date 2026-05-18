@@ -10,9 +10,25 @@ interface SectionFilterProps {
   onClearAll: () => void
 }
 
+// Ordem canônica dos grupos (Grupos A-L)
+export const SECTION_ORDER: string[] = [
+  "GROUP_A",
+  "GROUP_B",
+  "GROUP_C",
+  "GROUP_D",
+  "GROUP_E",
+  "GROUP_F",
+  "GROUP_G",
+  "GROUP_H",
+  "GROUP_I",
+  "GROUP_J",
+  "GROUP_K",
+  "GROUP_L",
+]
+
 // Mapa de nomes de seções para PT-BR
 const sectionLabels: Record<string, string> = {
-  // Grupos do álbum (adicione mais conforme necessário)
+  // Grupos A–L
   "GROUP_A": "Grupo A",
   "GROUP_B": "Grupo B",
   "GROUP_C": "Grupo C",
@@ -21,6 +37,11 @@ const sectionLabels: Record<string, string> = {
   "GROUP_F": "Grupo F",
   "GROUP_G": "Grupo G",
   "GROUP_H": "Grupo H",
+  "GROUP_I": "Grupo I",
+  "GROUP_J": "Grupo J",
+  "GROUP_K": "Grupo K",
+  "GROUP_L": "Grupo L",
+  // Demais seções
   "INTRO": "Introdução",
   "STADIUMS": "Estádios",
   "LEGENDS": "Lendas",
@@ -35,8 +56,39 @@ const sectionLabels: Record<string, string> = {
   "MEXICO": "México",
 }
 
+// Rótulos das seleções dentro de cada grupo
+export const GROUP_TEAM_LABELS: Record<string, string[]> = {
+  GROUP_A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
+  GROUP_B: ["Canadá", "Bósnia e Herzegovina", "Catar", "Suíça"],
+  GROUP_C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
+  GROUP_D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
+  GROUP_E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
+  GROUP_F: ["Países Baixos", "Japão", "Tunísia", "Suécia"],
+  GROUP_G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
+  GROUP_H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
+  GROUP_I: ["França", "Senegal", "Noruega", "Iraque"],
+  GROUP_J: ["Argentina", "Áustria", "Argélia", "Jordânia"],
+  GROUP_K: ["Portugal", "Colômbia", "Uzbequistão", "República Democrática do Congo"],
+  GROUP_L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
+}
+
 function getSectionLabel(section: string): string {
   return sectionLabels[section] ?? section
+}
+
+/**
+ * Ordena um array de seções respeitando SECTION_ORDER.
+ * Seções não previstas vão para o final, mantendo a ordem original entre elas.
+ */
+export function sortSections(sections: string[]): string[] {
+  return [...sections].sort((a, b) => {
+    const ia = SECTION_ORDER.indexOf(a)
+    const ib = SECTION_ORDER.indexOf(b)
+    if (ia === -1 && ib === -1) return 0
+    if (ia === -1) return 1
+    if (ib === -1) return -1
+    return ia - ib
+  })
 }
 
 export function SectionFilter({
@@ -46,6 +98,8 @@ export function SectionFilter({
   onSelectAll,
   onClearAll,
 }: SectionFilterProps) {
+  const ordered = sortSections(sections)
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -69,7 +123,7 @@ export function SectionFilter({
       </div>
       
       <div className="flex flex-wrap gap-2">
-        {sections.map((section) => (
+        {ordered.map((section) => (
           <button
             key={section}
             onClick={() => onToggleSection(section)}

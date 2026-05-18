@@ -7,7 +7,7 @@ import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribu
 import { UserSelector } from "./user-selector"
 import { StatsCard } from "./stats-card"
 import { StickerGrid } from "./sticker-grid"
-import { SectionFilter } from "./section-filter"
+import { SectionFilter, sortSections } from "./section-filter"
 import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
@@ -92,12 +92,13 @@ export function AlbumManager() {
     { refreshInterval: 3000 }
   )
 
-  const sections = [...new Set(stickers.map((s) => s.section))]
+  // Seções únicas extraídas dos stickers, ordenadas canonicamente
+  const sections = sortSections([...new Set(stickers.map((s) => s.section))])
 
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
-      setSelectedSections([...new Set(stickers.map((s) => s.section))])
+      setSelectedSections(sortSections([...new Set(stickers.map((s) => s.section))]))
     }
   }, [stickers])
 
