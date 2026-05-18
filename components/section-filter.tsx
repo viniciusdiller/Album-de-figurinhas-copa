@@ -10,25 +10,126 @@ interface SectionFilterProps {
   onClearAll: () => void
 }
 
-// Ordem canônica dos grupos (Grupos A-L)
+/**
+ * Ordem canônica das seções (códigos reais do banco),
+ * seguindo a ordem especificada: MEX, RSA, KOR, CZE, CAN, BIH, QAT, SUI...
+ * FWC fica primeiro por ser a seção de capa/introdução.
+ * Seções não listadas ficam ao final.
+ */
 export const SECTION_ORDER: string[] = [
-  "GROUP_A",
-  "GROUP_B",
-  "GROUP_C",
-  "GROUP_D",
-  "GROUP_E",
-  "GROUP_F",
-  "GROUP_G",
-  "GROUP_H",
-  "GROUP_I",
-  "GROUP_J",
-  "GROUP_K",
-  "GROUP_L",
+  "FWC",  // Copa do Mundo (capa)
+  "MEX",  // México
+  "RSA",  // África do Sul
+  "KOR",  // Coreia do Sul
+  "CZE",  // República Tcheca
+  "CAN",  // Canadá
+  "BIH",  // Bósnia e Herzegovina
+  "QAT",  // Catar
+  "SUI",  // Suíça
+  "BRA",  // Brasil
+  "MAR",  // Marrocos
+  "HAI",  // Haiti
+  "SCO",  // Escócia
+  "USA",  // Estados Unidos
+  "PAR",  // Paraguai
+  "AUS",  // Austrália
+  "TUR",  // Turquia
+  "GER",  // Alemanha
+  "CUW",  // Curaçao
+  "CIV",  // Costa do Marfim
+  "ECU",  // Equador
+  "NED",  // Países Baixos
+  "JPN",  // Japão
+  "TUN",  // Tunísia
+  "SWE",  // Suécia
+  "BEL",  // Bélgica
+  "EGY",  // Egito
+  "IRN",  // Irã
+  "NZL",  // Nova Zelândia
+  "FRA",  // França
+  "SEN",  // Senegal
+  "NOR",  // Noruega
+  "IRQ",  // Iraque
+  "ARG",  // Argentina
+  "AUT",  // Áustria
+  "ALG",  // Argélia
+  "JOR",  // Jordânia
+  "POR",  // Portugal
+  "COL",  // Colômbia
+  "UZB",  // Uzbequistão
+  "COD",  // República Democrática do Congo
+  "ENG",  // Inglaterra
+  "CRO",  // Croácia
+  "GHA",  // Gana
+  "PAN",  // Panamá
 ]
 
-// Mapa de nomes de seções para PT-BR
+// Mapa de códigos de seções para nomes em PT-BR
 const sectionLabels: Record<string, string> = {
-  // Grupos A–L
+  "FWC": "FWC",
+  "MEX": "México",
+  "RSA": "África do Sul",
+  "KOR": "Coreia do Sul",
+  "CZE": "República Tcheca",
+  "CAN": "Canadá",
+  "BIH": "Bósnia e Herzegovina",
+  "QAT": "Catar",
+  "SUI": "Suíça",
+  "BRA": "Brasil",
+  "MAR": "Marrocos",
+  "HAI": "Haiti",
+  "SCO": "Escócia",
+  "USA": "Estados Unidos",
+  "PAR": "Paraguai",
+  "AUS": "Austrália",
+  "TUR": "Turquia",
+  "GER": "Alemanha",
+  "CUW": "Curaçao",
+  "CIV": "Costa do Marfim",
+  "ECU": "Equador",
+  "NED": "Países Baixos",
+  "JPN": "Japão",
+  "TUN": "Tunísia",
+  "SWE": "Suécia",
+  "BEL": "Bélgica",
+  "EGY": "Egito",
+  "IRN": "Irã",
+  "NZL": "Nova Zelândia",
+  "FRA": "França",
+  "SEN": "Senegal",
+  "NOR": "Noruega",
+  "IRQ": "Iraque",
+  "ARG": "Argentina",
+  "AUT": "Áustria",
+  "ALG": "Argélia",
+  "JOR": "Jordânia",
+  "POR": "Portugal",
+  "COL": "Colômbia",
+  "UZB": "Uzbequistão",
+  "COD": "República Democrática do Congo",
+  "ENG": "Inglaterra",
+  "CRO": "Croácia",
+  "GHA": "Gana",
+  "PAN": "Panamá",
+  // códigos alternativos que possam existir no banco
+  "ESP": "Espanha",
+  "ITA": "Itália",
+  "DEN": "Dinamarca",
+  "POL": "Polônia",
+  "URU": "Uruguai",
+  "CHI": "Chile",
+  "VEN": "Venezuela",
+  "IRE": "Irlanda",
+  "SRB": "Sérvia",
+  "WAL": "Gales",
+  "HON": "Honduras",
+  "CRC": "Costa Rica",
+  "CMR": "Camerões",
+  "NGR": "Nigéria",
+  "SAU": "Arábia Saudita",
+  "UKR": "Ucrânia",
+  "UKR": "Ucrânia",
+  // legados do PR anterior
   "GROUP_A": "Grupo A",
   "GROUP_B": "Grupo B",
   "GROUP_C": "Grupo C",
@@ -41,44 +142,15 @@ const sectionLabels: Record<string, string> = {
   "GROUP_J": "Grupo J",
   "GROUP_K": "Grupo K",
   "GROUP_L": "Grupo L",
-  // Demais seções
-  "INTRO": "Introdução",
-  "STADIUMS": "Estádios",
-  "LEGENDS": "Lendas",
-  "PLAYERS": "Jogadores",
-  "TEAMS": "Seleções",
-  "SPECIAL": "Especiais",
-  "WORLD_CUP": "Copa do Mundo",
-  "FIFA": "FIFA",
-  "HOSTS": "Países Sede",
-  "USA": "Estados Unidos",
-  "CANADA": "Canadá",
-  "MEXICO": "México",
 }
 
-// Rótulos das seleções dentro de cada grupo
-export const GROUP_TEAM_LABELS: Record<string, string[]> = {
-  GROUP_A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
-  GROUP_B: ["Canadá", "Bósnia e Herzegovina", "Catar", "Suíça"],
-  GROUP_C: ["Brasil", "Marrocos", "Haiti", "Escócia"],
-  GROUP_D: ["Estados Unidos", "Paraguai", "Austrália", "Turquia"],
-  GROUP_E: ["Alemanha", "Curaçao", "Costa do Marfim", "Equador"],
-  GROUP_F: ["Países Baixos", "Japão", "Tunísia", "Suécia"],
-  GROUP_G: ["Bélgica", "Egito", "Irã", "Nova Zelândia"],
-  GROUP_H: ["Espanha", "Cabo Verde", "Arábia Saudita", "Uruguai"],
-  GROUP_I: ["França", "Senegal", "Noruega", "Iraque"],
-  GROUP_J: ["Argentina", "Áustria", "Argélia", "Jordânia"],
-  GROUP_K: ["Portugal", "Colômbia", "Uzbequistão", "República Democrática do Congo"],
-  GROUP_L: ["Inglaterra", "Croácia", "Gana", "Panamá"],
-}
-
-function getSectionLabel(section: string): string {
+export function getSectionLabel(section: string): string {
   return sectionLabels[section] ?? section
 }
 
 /**
  * Ordena um array de seções respeitando SECTION_ORDER.
- * Seções não previstas vão para o final, mantendo a ordem original entre elas.
+ * Seções não previstas ficam ao final, mantendo a ordem relativa entre elas.
  */
 export function sortSections(sections: string[]): string[] {
   return [...sections].sort((a, b) => {
@@ -112,7 +184,6 @@ export function SectionFilter({
             Todas
           </button>
           <span className="text-muted-foreground">|</span>
-          {/* Limpar = desmarcar todas as seleções para facilitar escolher só 1 */}
           <button
             onClick={onClearAll}
             className="text-xs text-destructive hover:text-destructive/80 hover:underline font-medium transition-colors"
@@ -121,7 +192,7 @@ export function SectionFilter({
           </button>
         </div>
       </div>
-      
+
       <div className="flex flex-wrap gap-2">
         {ordered.map((section) => (
           <button

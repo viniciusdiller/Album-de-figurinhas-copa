@@ -12,7 +12,6 @@ import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
 
-// Chama a RPC via fetch direto para não depender de tipos gerados
 async function callIncrementContribution(userId: string, stickerId: number, delta: number) {
   const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/increment_contribution`
   const res = await fetch(url, {
@@ -92,7 +91,7 @@ export function AlbumManager() {
     { refreshInterval: 3000 }
   )
 
-  // Seções únicas extraídas dos stickers, ordenadas canonicamente
+  // Seções únicas ordenadas canonicamente pelos códigos reais do banco
   const sections = sortSections([...new Set(stickers.map((s) => s.section))])
 
   useEffect(() => {
