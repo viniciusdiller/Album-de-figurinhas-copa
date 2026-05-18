@@ -7,7 +7,7 @@ import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribu
 import { UserSelector } from "./user-selector"
 import { StatsCard } from "./stats-card"
 import { StickerGrid } from "./sticker-grid"
-import { SectionFilter, sortSections } from "./section-filter"
+import { SectionFilter, getSectionLabel } from "./section-filter"
 import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
@@ -36,7 +36,12 @@ async function fetchUsers(): Promise<User[]> {
 }
 
 async function fetchStickers(): Promise<Sticker[]> {
-  const { data, error } = await supabase.from("stickers").select("*").order("id")
+  // Ordenado diretamente pelo banco usando a coluna section_order
+  const { data, error } = await supabase
+    .from("stickers")
+    .select("*")
+    .order("section_order", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true })
   if (error) throw error
   return data || []
 }
@@ -91,13 +96,13 @@ export function AlbumManager() {
     { refreshInterval: 3000 }
   )
 
-  // Seções únicas ordenadas canonicamente pelos códigos reais do banco
-  const sections = sortSections([...new Set(stickers.map((s) => s.section))])
+  // Seções únicas mantendo a ordem que veio do banco (já ordenada por section_order)
+  const sections = [...new Set(stickers.map((s) => s.section))]
 
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
-      setSelectedSections(sortSections([...new Set(stickers.map((s) => s.section))]))
+      setSelectedSections([...new Set(stickers.map((s) => s.section))])
     }
   }, [stickers])
 
