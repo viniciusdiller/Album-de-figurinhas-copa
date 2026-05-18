@@ -10,22 +10,6 @@ interface SectionFilterProps {
   onClearAll: () => void
 }
 
-// Ordem canônica dos grupos (Grupos A-L)
-export const SECTION_ORDER: string[] = [
-  "GROUP_A",
-  "GROUP_B",
-  "GROUP_C",
-  "GROUP_D",
-  "GROUP_E",
-  "GROUP_F",
-  "GROUP_G",
-  "GROUP_H",
-  "GROUP_I",
-  "GROUP_J",
-  "GROUP_K",
-  "GROUP_L",
-]
-
 // Mapa de nomes de seções para PT-BR
 const sectionLabels: Record<string, string> = {
   // Grupos A–L
@@ -56,7 +40,7 @@ const sectionLabels: Record<string, string> = {
   "MEXICO": "México",
 }
 
-// Rótulos das seleções dentro de cada grupo
+// Rótulos das seleções dentro de cada grupo (mantido para compatibilidade)
 export const GROUP_TEAM_LABELS: Record<string, string[]> = {
   GROUP_A: ["México", "África do Sul", "Coreia do Sul", "República Tcheca"],
   GROUP_B: ["Canadá", "Bósnia e Herzegovina", "Catar", "Suíça"],
@@ -77,18 +61,11 @@ function getSectionLabel(section: string): string {
 }
 
 /**
- * Ordena um array de seções respeitando SECTION_ORDER.
- * Seções não previstas vão para o final, mantendo a ordem original entre elas.
+ * Preserva a ordem recebida — a ordenação canônica já vem do banco
+ * via section_order, não precisa de re-sort no cliente.
  */
 export function sortSections(sections: string[]): string[] {
-  return [...sections].sort((a, b) => {
-    const ia = SECTION_ORDER.indexOf(a)
-    const ib = SECTION_ORDER.indexOf(b)
-    if (ia === -1 && ib === -1) return 0
-    if (ia === -1) return 1
-    if (ib === -1) return -1
-    return ia - ib
-  })
+  return sections
 }
 
 export function SectionFilter({
@@ -98,8 +75,6 @@ export function SectionFilter({
   onSelectAll,
   onClearAll,
 }: SectionFilterProps) {
-  const ordered = sortSections(sections)
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -112,7 +87,6 @@ export function SectionFilter({
             Todas
           </button>
           <span className="text-muted-foreground">|</span>
-          {/* Limpar = desmarcar todas as seleções para facilitar escolher só 1 */}
           <button
             onClick={onClearAll}
             className="text-xs text-destructive hover:text-destructive/80 hover:underline font-medium transition-colors"
@@ -123,7 +97,7 @@ export function SectionFilter({
       </div>
       
       <div className="flex flex-wrap gap-2">
-        {ordered.map((section) => (
+        {sections.map((section) => (
           <button
             key={section}
             onClick={() => onToggleSection(section)}

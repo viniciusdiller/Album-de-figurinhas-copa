@@ -7,7 +7,7 @@ import { User, Sticker, StickerWithStatus, UserStats, AlbumSticker, UserContribu
 import { UserSelector } from "./user-selector"
 import { StatsCard } from "./stats-card"
 import { StickerGrid } from "./sticker-grid"
-import { SectionFilter, sortSections } from "./section-filter"
+import { SectionFilter } from "./section-filter"
 import { ContributionsBoard } from "./contributions-board"
 
 const supabase = createClient()
@@ -37,7 +37,13 @@ async function fetchUsers(): Promise<User[]> {
 }
 
 async function fetchStickers(): Promise<Sticker[]> {
-  const { data, error } = await supabase.from("stickers").select("*").order("id")
+  // Ordena pelo section_order definido no banco (ordem canônica dos grupos/seleções)
+  // e depois pelo id para manter ordem dentro da mesma seção
+  const { data, error } = await supabase
+    .from("stickers")
+    .select("*")
+    .order("section_order", { ascending: true })
+    .order("id", { ascending: true })
   if (error) throw error
   return data || []
 }
@@ -63,6 +69,23 @@ async function fetchAllUserStickers() {
     .select("user_id, contributed_count")
   if (error) throw error
   return data || []
+}
+
+/**
+ * Extrai a lista de seções únicas preservando a ordem em que aparecem nos stickers.
+ * Como os stickers já vêm ordenados por section_order do banco,
+ * basta fazer um dedup mantendo a primeira ocorrência de cada seção.
+ */
+function extractOrderedSections(stickers: Sticker[]): string[] {
+  const seen = new Set<string>()
+  const ordered: string[] = []
+  for (const s of stickers) {
+    if (!seen.has(s.section)) {
+      seen.add(s.section)
+      ordered.push(s.section)
+    }
+  }
+  return ordered
 }
 
 export function AlbumManager() {
@@ -92,13 +115,13 @@ export function AlbumManager() {
     { refreshInterval: 3000 }
   )
 
-  // Seções únicas extraídas dos stickers, ordenadas canonicamente
-  const sections = sortSections([...new Set(stickers.map((s) => s.section))])
+  // Seções únicas preservando a ordem do banco (section_order)
+  const sections = extractOrderedSections(stickers)
 
   useEffect(() => {
     if (stickers.length > 0 && !sectionsInitialized.current) {
       sectionsInitialized.current = true
-      setSelectedSections(sortSections([...new Set(stickers.map((s) => s.section))]))
+      setSelectedSections(extractOrderedSections(stickers))
     }
   }, [stickers])
 
