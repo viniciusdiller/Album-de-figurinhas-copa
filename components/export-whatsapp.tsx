@@ -33,7 +33,7 @@ function buildMessage(stickers: StickerWithStatus[], mode: ExportMode, userName:
   const lines: string[] = []
 
   if (mode === "repetidas") {
-    const repeated = stickers.filter((s) => s.obtained && s.contributed_count > 1)
+    const repeated = stickers.filter((s) => s.obtained && s.contributed_count >= 1)
     if (repeated.length === 0) return "Nenhuma figurinha repetida encontrada."
     lines.push(`🔁 *Figurinhas repetidas de ${userName}:*`)
     lines.push("")
@@ -87,7 +87,7 @@ function buildMessage(stickers: StickerWithStatus[], mode: ExportMode, userName:
 
   if (mode === "faltam_e_repetidas") {
     const missing = stickers.filter((s) => !s.obtained)
-    const repeated = stickers.filter((s) => s.obtained && s.contributed_count > 1)
+    const repeated = stickers.filter((s) => s.obtained && s.contributed_count >= 1)
 
     lines.push(`📋 *Resumo do álbum de ${userName}:*`)
     lines.push("")
@@ -149,7 +149,6 @@ export function ExportWhatsapp({ stickers, user }: ExportWhatsappProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // fallback para navegadores sem suporte
       const textarea = document.createElement("textarea")
       textarea.value = message
       document.body.appendChild(textarea)
