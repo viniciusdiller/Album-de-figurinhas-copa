@@ -9,6 +9,7 @@ import { StatsCard } from "./stats-card"
 import { StickerGrid } from "./sticker-grid"
 import { SectionFilter } from "./section-filter"
 import { ContributionsBoard } from "./contributions-board"
+import { ExportWhatsapp } from "./export-whatsapp"
 
 const supabase = createClient()
 
@@ -231,7 +232,7 @@ export function AlbumManager() {
   return (
     <div className="space-y-6">
       <div className="text-center space-y-4">
-        <h2 className="text-xl md:text-2xl font-bold text-foreground">Quem está usando? 🎴</h2>
+        <h2 className="text-xl md:text-2xl font-bold text-foreground">Quem está usando? 🏄</h2>
         <UserSelector users={users} selectedUser={selectedUser} onSelectUser={setSelectedUser} />
         <p className="text-xs text-muted-foreground">
           💡 O álbum é compartilhado — qualquer um pode marcar figurinhas!
@@ -239,6 +240,13 @@ export function AlbumManager() {
       </div>
 
       {selectedUser && <StatsCard stats={stats} />}
+
+      {/* Botão de exportação para WhatsApp */}
+      {selectedUser && (
+        <div className="flex justify-end">
+          <ExportWhatsapp stickers={stickersWithStatus} user={selectedUser} />
+        </div>
+      )}
 
       {selectedUser && (
         <>
